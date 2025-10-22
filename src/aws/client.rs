@@ -848,6 +848,7 @@ impl GetClient for S3Client {
         path: &Path,
         options: GetOptions,
     ) -> Result<HttpResponse> {
+        println!("---> S3 Client: Get request for path: {:?} {:?}", path, options);
         let credential = self.config.get_session_credential().await?;
         let url = self.config.path_url(path);
         let method = match options.head {
@@ -889,6 +890,7 @@ impl ListClient for Arc<S3Client> {
         prefix: Option<&str>,
         opts: PaginatedListOptions,
     ) -> Result<PaginatedListResult> {
+        println!("---> S3 Client: Listing request for prefix: {:?} {:?}", prefix, opts);
         let credential = self.config.get_session_credential().await?;
         let url = self.config.bucket_endpoint.clone();
 
