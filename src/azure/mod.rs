@@ -123,6 +123,7 @@ impl ObjectStore for MicrosoftAzure {
     fn list(&self, prefix: Option<&Path>) -> BoxStream<'static, Result<ObjectMeta>> {
         self.client.list(prefix)
     }
+
     fn delete_stream<'a>(
         &'a self,
         locations: BoxStream<'a, Result<Path>>,
@@ -162,9 +163,13 @@ impl ObjectStore for MicrosoftAzure {
     ) -> BoxStream<'static, Result<ObjectMeta>> {
         use std::env;
         match env::var("AZURE_BLOB_USE_START_FROM").as_deref() {
-            Ok("true") => self.client.list_with_offset(prefix, offset),
+            Ok("true") => {
+                tracing::info!("azure::client::list_with_offset");
+                self.client.list_with_offset(prefix, offset)
+            }
             _ => {
                 let offset = offset.clone();
+                tracing::info!("azure::client::list + filter");
                 self.list(prefix)
                     .try_filter(move |f| futures::future::ready(f.location > offset))
                     .boxed()

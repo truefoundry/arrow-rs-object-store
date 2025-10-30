@@ -1052,14 +1052,14 @@ struct ListResultInternal {
 
 fn to_list_result(value: ListResultInternal, prefix: Option<&str>) -> Result<ListResult> {
     let prefix = prefix.unwrap_or_default();
-    let common_prefixes = value
+    let common_prefixes: Vec<_> = value
         .blobs
         .blob_prefix
         .into_iter()
         .map(|x| Ok(Path::parse(x.name)?))
         .collect::<Result<_>>()?;
 
-    let objects = value
+    let objects: Vec<_> = value
         .blobs
         .blobs
         .into_iter()
@@ -1072,6 +1072,13 @@ fn to_list_result(value: ListResultInternal, prefix: Option<&str>) -> Result<Lis
         })
         .map(ObjectMeta::try_from)
         .collect::<Result<_>>()?;
+
+    tracing::span!(
+        tracing::Level::INFO,
+        "list_paginated result",
+        common_prefixes = common_prefixes.len(),
+        objects = objects.len()
+    );
 
     Ok(ListResult {
         common_prefixes,
