@@ -44,7 +44,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use url::Url;
 
-static AZURE_VERSION: HeaderValue = HeaderValue::from_static("2023-11-03");
+pub(crate) static AZURE_VERSION: HeaderValue = HeaderValue::from_static("2023-11-03");
+pub(crate) static AZURE_BLOB_START_FROM_VERSION: HeaderValue =
+    HeaderValue::from_static("2026-02-06");
 static VERSION: HeaderName = HeaderName::from_static("x-ms-version");
 pub(crate) static BLOB_TYPE: HeaderName = HeaderName::from_static("x-ms-blob-type");
 pub(crate) static COPY_SOURCE: HeaderName = HeaderName::from_static("x-ms-copy-source");
@@ -207,7 +209,7 @@ impl AzureSigner {
     }
 }
 
-fn add_date_and_version_headers(request: &mut HttpRequest) {
+fn add_date_and_version_headers(request: &mut HttpRequest, azure_version: &HeaderValue) {
     // rfc2822 string should never contain illegal characters
     let date = Utc::now();
     let date_str = date.format(RFC1123_FMT).to_string();
@@ -216,7 +218,7 @@ fn add_date_and_version_headers(request: &mut HttpRequest) {
     request.headers_mut().insert(DATE, date_val);
     request
         .headers_mut()
-        .insert(&VERSION, AZURE_VERSION.clone());
+        .insert(&VERSION, azure_version.clone());
 }
 
 /// Authorize a [`HttpRequest`] with an [`AzureAuthorizer`]
@@ -236,8 +238,8 @@ impl<'a> AzureAuthorizer<'a> {
     }
 
     /// Authorize `request`
-    pub fn authorize(&self, request: &mut HttpRequest) {
-        add_date_and_version_headers(request);
+    pub fn authorize(&self, request: &mut HttpRequest, azure_version: &HeaderValue) {
+        add_date_and_version_headers(request, azure_version);
 
         match self.credential {
             AzureCredential::AccessKey(key) => {
@@ -277,6 +279,7 @@ pub(crate) trait CredentialExt {
         self,
         credential: &Option<impl Deref<Target = AzureCredential>>,
         account: &str,
+        azure_version: &HeaderValue,
     ) -> Self;
 }
 
@@ -285,16 +288,17 @@ impl CredentialExt for HttpRequestBuilder {
         self,
         credential: &Option<impl Deref<Target = AzureCredential>>,
         account: &str,
+        azure_version: &HeaderValue,
     ) -> Self {
         let (client, request) = self.into_parts();
         let mut request = request.expect("request valid");
 
         match credential.as_deref() {
             Some(credential) => {
-                AzureAuthorizer::new(credential, account).authorize(&mut request);
+                AzureAuthorizer::new(credential, account).authorize(&mut request, azure_version);
             }
             None => {
-                add_date_and_version_headers(&mut request);
+                add_date_and_version_headers(&mut request, azure_version);
             }
         }
 

@@ -267,7 +267,7 @@ impl PutRequest<'_> {
         let response = self
             .builder
             .header(CONTENT_LENGTH, self.payload.content_length())
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .retryable(&self.config.retry_config)
             .sensitive(sensitive)
             .idempotent(self.idempotent)
@@ -640,7 +640,7 @@ impl AzureClient {
                 // Each subrequest must be authorized individually [1] and we use
                 // the CredentialExt for this.
                 // [1]: https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch?tabs=microsoft-entra-id#request-body
-                .with_azure_authorization(credential, &self.config.account)
+                .with_azure_authorization(credential, &self.config.account, &AZURE_VERSION)
                 .into_parts()
                 .1
                 .unwrap();
@@ -687,7 +687,7 @@ impl AzureClient {
             )
             .header(CONTENT_LENGTH, HeaderValue::from(body_bytes.len()))
             .body(body_bytes)
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .send_retry(&self.config.retry_config)
             .await
             .map_err(|source| Error::BulkDeleteRequest { source })?;
@@ -732,7 +732,7 @@ impl AzureClient {
             .map(|c| c.sensitive_request())
             .unwrap_or_default();
         builder
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .retryable(&self.config.retry_config)
             .sensitive(sensitive)
             .idempotent(overwrite)
@@ -773,7 +773,7 @@ impl AzureClient {
             .post(url.as_str())
             .body(body)
             .query(&[("restype", "service"), ("comp", "userdelegationkey")])
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .retryable(&self.config.retry_config)
             .sensitive(sensitive)
             .idempotent(true)
@@ -837,7 +837,7 @@ impl AzureClient {
             .client
             .get(url.as_str())
             .query(&[("comp", "tags")])
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .retryable(&self.config.retry_config)
             .sensitive(sensitive)
             .send()
@@ -907,7 +907,7 @@ impl GetClient for AzureClient {
 
         let response = builder
             .with_get_options(options)
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, &AZURE_VERSION)
             .retryable_request()
             .sensitive(sensitive)
             .send(ctx)
@@ -939,12 +939,7 @@ impl ListClient for Arc<AzureClient> {
         prefix: Option<&str>,
         opts: PaginatedListOptions,
     ) -> Result<PaginatedListResult> {
-        if opts.offset.is_some() {
-            return Err(crate::Error::NotSupported {
-                source: "Azure does not support listing with offsets".into(),
-            });
-        }
-
+        let mut azure_version = &AZURE_VERSION;
         let credential = self.get_credential().await?;
         let url = self.config.path_url(&Path::default());
 
@@ -954,6 +949,11 @@ impl ListClient for Arc<AzureClient> {
 
         if let Some(prefix) = prefix {
             query.push(("prefix", prefix))
+        }
+
+        if let Some(offset) = &opts.offset {
+            query.push(("startFrom", offset.as_ref()));
+            azure_version = &AZURE_BLOB_START_FROM_VERSION;
         }
 
         if let Some(delimiter) = &opts.delimiter {
@@ -980,7 +980,7 @@ impl ListClient for Arc<AzureClient> {
             .get(url.as_str())
             .extensions(opts.extensions)
             .query(&query)
-            .with_azure_authorization(&credential, &self.config.account)
+            .with_azure_authorization(&credential, &self.config.account, azure_version)
             .retryable(&self.config.retry_config)
             .sensitive(sensitive)
             .send()
@@ -1016,14 +1016,14 @@ struct ListResultInternal {
 
 fn to_list_result(value: ListResultInternal, prefix: Option<&str>) -> Result<ListResult> {
     let prefix = prefix.unwrap_or_default();
-    let common_prefixes = value
+    let common_prefixes: Vec<_> = value
         .blobs
         .blob_prefix
         .into_iter()
         .map(|x| Ok(Path::parse(x.name)?))
         .collect::<Result<_>>()?;
 
-    let objects = value
+    let objects: Vec<_> = value
         .blobs
         .blobs
         .into_iter()
@@ -1036,6 +1036,13 @@ fn to_list_result(value: ListResultInternal, prefix: Option<&str>) -> Result<Lis
         })
         .map(ObjectMeta::try_from)
         .collect::<Result<_>>()?;
+
+    tracing::span!(
+        tracing::Level::INFO,
+        "list_paginated result",
+        common_prefixes = common_prefixes.len(),
+        objects = objects.len()
+    );
 
     Ok(ListResult {
         common_prefixes,
