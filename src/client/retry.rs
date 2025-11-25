@@ -55,14 +55,12 @@ impl std::fmt::Display for RetryError {
             None => write!(f, "REDACTED ")?,
         }
         write!(f, "in {:?}", self.0.elapsed)?;
-        if self.0.retries != 0 {
-            write!(
-                f,
-                ", after {} retries, max_retries: {}, retry_timeout: {:?} ",
-                self.0.retries, self.0.max_retries, self.0.retry_timeout
-            )?;
-        }
-        write!(f, " - {}", self.0.inner)
+        write!(
+            f,
+            ", after {} retries, max_retries: {}, retry_timeout: {:?} ",
+            self.0.retries, self.0.max_retries, self.0.retry_timeout
+        )?;
+        write!(f, " - {:?}", self.0.inner)
     }
 }
 

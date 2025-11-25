@@ -32,7 +32,7 @@ use tokio::runtime::Handle;
 /// non 2xx Status Codes, as these should instead be returned as an [`HttpResponse`]
 /// with the appropriate status code set.
 #[derive(Debug, thiserror::Error)]
-#[error("HTTP error: {source}")]
+#[error("HTTP error ({kind:?}): {source:?}")]
 pub struct HttpError {
     kind: HttpErrorKind,
     #[source]
