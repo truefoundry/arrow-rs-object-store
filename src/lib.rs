@@ -1317,7 +1317,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[non_exhaustive]
 pub enum Error {
     /// A fallback error type when no variant matches
-    #[error("Generic {} error: {}", store, source)]
+    #[error("Generic {} error: {:?}", store, source)]
     Generic {
         /// The store this error originated from
         store: &'static str,
